@@ -1,13 +1,24 @@
 
+BIN = iojs
+
+ifeq ($(findstring io.js, $(shell which node)),)
+	BIN = node
+endif
+
+ifeq (node, $(BIN))
+	FLAGS = --harmony-generators
+endif
+
 
 test:
-	@NODE_ENV=test node_modules/.bin/mocha \
+	@NODE_ENV=test $(BIN) $(FLAGS) \
+		./node_modules/.bin/_mocha \
 		--require co-mocha \
 		--reporter spec \
 		--bail
 
 test-cov:
-	@NODE_ENV=test node \
+	@NODE_ENV=test $(BIN) $(FLAGS) \
 		./node_modules/.bin/istanbul cover \
 		./node_modules/.bin/_mocha \
 		-- -u exports \
@@ -15,7 +26,7 @@ test-cov:
 		--reporter spec
 
 test-travis:
-	@NODE_ENV=test node \
+	@NODE_ENV=test $(BIN) $(FLAGS) \
 		./node_modules/.bin/istanbul cover \
 		./node_modules/.bin/_mocha \
 		--report lcovonly \

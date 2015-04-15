@@ -104,7 +104,7 @@ describe('Beam', function(done){
 
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('dogpix');
 
     yield driver.subscribe('fred', 'catpix');
     yield wait(beam, 'message');
@@ -112,20 +112,20 @@ describe('Beam', function(done){
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.has('catpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(2);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('catpix', 'dogpix');
 
     yield driver.unsubscribe('fred', 'catpix');
     yield wait(beam, 'message');
 
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('dogpix');
 
     yield driver.unsubscribe('fred');
     yield wait(beam, 'message');
 
     expect(subs.fred.resources.size).to.eql(0);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql([]);
+    expect(yield redis.smembers('beam:0:session:fred')).to.be.empty();
 
     unfollow();
     expect(subs.fred).to.be(undefined);
@@ -145,10 +145,10 @@ describe('Beam', function(done){
 
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('dogpix');
     expect(subs.sally.resources.has('dogpix')).to.be.ok();
     expect(subs.sally.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:sally')).to.eql(['dogpix']);
+    expect(yield redis.smembers('beam:0:session:sally')).to.only.contain('dogpix');
 
     yield driver.subscribe('fred', 'catpix');
     yield wait(beam, 'message');
@@ -156,10 +156,10 @@ describe('Beam', function(done){
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.has('catpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(2);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('catpix', 'dogpix');
     expect(subs.sally.resources.has('dogpix')).to.be.ok();
     expect(subs.sally.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:sally')).to.eql(['dogpix']);
+    expect(yield redis.smembers('beam:0:session:sally')).to.only.contain('dogpix');
 
     yield driver.unsubscribe('sally', 'dogpix');
     yield wait(beam, 'message');
@@ -167,9 +167,9 @@ describe('Beam', function(done){
     expect(subs.fred.resources.has('dogpix')).to.be.ok();
     expect(subs.fred.resources.has('catpix')).to.be.ok();
     expect(subs.fred.resources.size).to.eql(2);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
+    expect(yield redis.smembers('beam:0:session:fred')).to.only.contain('catpix', 'dogpix');
     expect(subs.sally.resources.size).to.eql(0);
-    expect(yield redis.smembers('beam:0:session:sally')).to.eql([]);
+    expect(yield redis.smembers('beam:0:session:sally')).to.be.empty();
 
     yield driver.unsubscribe('fred');
     yield wait(beam, 'message');
@@ -177,10 +177,10 @@ describe('Beam', function(done){
     yield wait(beam, 'message');
 
     expect(subs.fred.resources.size).to.eql(0);
-    expect(yield redis.smembers('beam:0:session:fred')).to.eql([]);
+    expect(yield redis.smembers('beam:0:session:fred')).to.be.empty();
     expect(subs.sally.resources.has('turtlepix')).to.be.ok();
     expect(subs.sally.resources.size).to.eql(1);
-    expect(yield redis.smembers('beam:0:session:sally')).to.eql(['turtlepix']);
+    expect(yield redis.smembers('beam:0:session:sally')).to.only.contain('turtlepix');
 
     unFred();
     expect(subs.fred).to.be(undefined);
@@ -327,7 +327,7 @@ describe('Beam', function(done){
       yield driver.subscribe('fred', 'catpix');
       var val = yield redis.smembers('beam:0:session:fred');
       expect(val).to.be.an(Array);
-      expect(val[0]).to.eql('catpix');
+      expect(val).to.only.contain('catpix');
     })
 
     it('correctly emits event', function *(done){
@@ -356,14 +356,11 @@ describe('Beam', function(done){
 
       var fred = yield redis.smembers('beam:0:session:fred');
       expect(fred).to.be.an(Array);
-      expect(fred).to.have.length(2);
-      expect(fred[0]).to.eql('catpix');
-      expect(fred[1]).to.eql('dogpix');
+      expect(fred).to.only.contain('catpix', 'dogpix');
 
       var sally = yield redis.smembers('beam:0:session:sally')
       expect(sally).to.be.an(Array);
-      expect(sally).to.have.length(1);
-      expect(sally[0]).to.eql('dogpix');
+      expect(sally).to.only.contain('dogpix');
     })
 
     it('unsubscribes all correctly', function *(){
@@ -374,19 +371,17 @@ describe('Beam', function(done){
 
       var sally = yield redis.smembers('beam:0:session:sally');
       expect(sally).to.be.an(Array);
-      expect(sally).to.have.length(2);
+      expect(sally).to.only.contain('catpix', 'dogpix');
 
       yield driver.unsubscribe('sally');
 
       var fred = yield redis.smembers('beam:0:session:fred');
       expect(fred).to.be.an(Array);
-      expect(fred).to.have.length(2);
-      expect(fred[0]).to.eql('catpix');
-      expect(fred[1]).to.eql('dogpix');
+      expect(fred).to.only.contain('catpix', 'dogpix');
 
       var sally = yield redis.smembers('beam:0:session:sally');
       expect(sally).to.be.an(Array);
-      expect(sally).to.have.length(0);
+      expect(sally).to.be.empty();
     })
 
     it('correctly emits event', function *(done){

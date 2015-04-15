@@ -1,5 +1,7 @@
 # beam.js
 
+[![Build Status](https://travis-ci.org/nickjackson/beam.svg?branch=master)](https://travis-ci.org/nickjackson/beam)
+
 beam.js is a realtime, subscription based, distributed broadcast emitter built on redis.
 
 ## Description
