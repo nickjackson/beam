@@ -3,7 +3,8 @@
 test:
 	@node_modules/.bin/mocha \
 		--require co-mocha \
-		--reporter spec
+		--reporter spec \
+		--bail
 
 test-cov:
 	@node \

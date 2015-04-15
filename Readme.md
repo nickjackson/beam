@@ -1,68 +1,41 @@
-# beam
+# beam.js
 
-beam is a
+beam.js is a realtime, subscription based, distributed broadcast emitter built on redis.
 
+## Description
+You can use beam to subscribe users to certain resources, such as database records or feeds. When those resources change, you can use beam to broadcast messages with details about the change to the users subscribed.
 
 ## Example
 
-```
-var Beam = require('beam.js');
-var BeamDriver = require('beam.js/driver');
-
-var beam = new Beam(...)
-var driver = new BeamDriver(...)
-
-// subscribe sharon to catpix resource
-driver.subscribe('sharon', 'catpix');
-
-// follow events that sharon subscribed to.
-beam.follow('sharon', function(body){
-	console.log(body.some) // 'data'
+```js
+// sets up beam with 
+var beam = Beam({
+    redis: redis.createClient(),
+    subRedis: redis.createClient()
 })
 
+// follow events that sharon subscribed to.
+var unfollow = yield beam.follow('sharon', function(msg){
+    console.log(msg.resource)  // 'catpix'
+    console.log(msg.body.some) // 'data'
+    
+    // when you're done unfollow
+    unfollow();
+})
+
+// setup a driver without 
+var driver = Beam({ redis: redis.createClient() });
+
+// subscribe sharon to catpix resource
+yield driver.subscribe('sharon', 'catpix');
+
 // broadcast change to catpix resource
-driver.broadcast('catpix', {some: 'data'})
+yield driver.broadcast('catpix', {some: 'data'});
+
+// unsubscribe sharon from catpix resource
+yield driver.unsubscribe('sharon', 'catpix');
+
 ```
 
 
 ##API
-
-```
-var beam = new beam({
-	redis: redis.createClient()
-});
-
-```
-
-
-## subscribe(session, resource)
-Subscribes a resource to a session or user.
-
-```
-beam.subscribe(session.id, resource.id);
-
-```
-
-
-## listen(session.id, opts, fn)
-Listen for changes
-
-```
-beam.listen(session.id, {}, function(event){
-	// event.type == 'payload'
-	// event.resource == resource.id
-	// event.payload == {something: 'changed'}
-});
-
-```
-
-
-## emit(id, payload)
-Emits data about a specific resource
-
-```
-beam.emit(resource.id, {
-	something: 'changed'
-});
-
-```

@@ -1,5 +1,4 @@
 var Beam = require('..');
-var Driver = require('../driver');
 var co = require('co');
 var expect = require('expect.js');
 var wrapper = require('co-redis');
@@ -7,36 +6,37 @@ var Redis = require('redis');
 var Promise = require('promise');
 
 
-function createRedis(){
-  return Redis.createClient(49153, '192.168.99.100')
+function createClient(){
+  var r = (process.env.REDIS || 'localhost:6379').split(':')
+  return Redis.createClient(r[1], r[0]);
 }
 
-var beam = new Beam({
-  redis: createRedis(),
-  subRedis: createRedis()
+var driver = Beam({
+  redis: createClient(),
 })
 
-var driver = new Driver({
-  redis: createRedis(),
+var beam = Beam({
+  redis: createClient(),
+  subRedis: createClient()
 })
 
-var redis = wrapper(createRedis());
-var pubsub = wrapper(createRedis());
+var redis = wrapper(createClient());
+var pubsub = wrapper(createClient());
 
 
-
-function *wait(b, session){
+function *wait(b, key){
   return co(function(){
     return new Promise(function(res, rej){
-      b.once('message', function(msg){
+      b.once(key, function(msg){
         process.nextTick(res.bind(null, msg));
       })
     })
   })
 }
 
-describe('Beam', function(done){
 
+
+describe('Beam', function(done){
   beforeEach(function *(){
     yield redis.flushdb();
   })
@@ -54,14 +54,26 @@ describe('Beam', function(done){
     });
   })
 
-  it('requires redis subRedis to start', function(){
-    function fn(){
-      new Beam({redis:createRedis()});
-    }
-    expect(fn).to.throwException(function(e){
-      expect(e.message).to.eql('no subRedis')
-    });
+  it('instantiates correctly without listening', function(){
+    var beam = new Beam({redis: createClient()});
+    expect(beam.listening).to.be(undefined);
+    beam.end();
+
+    var beam = Beam({redis: createClient()});
+    expect(beam.listening).to.be(undefined);
+    beam.end();
   })
+
+  it('instantiates correctly with listening', function(){
+    var beam = new Beam({redis: createClient(), subRedis: createClient()});
+    expect(beam.listening).to.be(true);
+    beam.end();
+
+    var beam = Beam({redis: createClient(), subRedis: createClient()});
+    expect(beam.listening).to.be(true);
+    beam.end();
+  })
+
 
   describe('message parsing', function(){
     it('ignores messages to incorrect channels', function (){
@@ -73,7 +85,7 @@ describe('Beam', function(done){
     })
 
     it('does not ignore messages to correct channels', function (done){
-      beam.once('redisMessage', function(msg){
+      beam.once('message', function(msg){
         expect(msg).to.eql({foo: 'bar'})
         done();
       })
@@ -81,113 +93,112 @@ describe('Beam', function(done){
       expect(beam.onRedisMessage('beam:0:channel', '{"foo":"bar"}')).to.be(beam);
     });
   })
-
   
 
   it('should be able to keep track of subscriptions for a single session', function *(){
     yield driver.subscribe('fred', 'dogpix');
-    yield beam.follow('fred', function(){});
+    var unfollow = yield beam.follow('fred', function(){});
     var subs = beam.subscriptions;
     
-    expect(beam.listeners('redisMessage')).to.have.length(1);
+    expect(beam.listeners('message')).to.have.length(1);
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(1);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
 
     yield driver.subscribe('fred', 'catpix');
-    yield wait(beam, 'fred');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.has('catpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(2);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.has('catpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(2);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
 
     yield driver.unsubscribe('fred', 'catpix');
-    yield wait(beam, 'fred');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(1);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
 
     yield driver.unsubscribe('fred');
-    yield wait(beam, 'fred');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.size).to.eql(0);
+    expect(subs.fred.resources.size).to.eql(0);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql([]);
 
-    beam.unfollow('fred');
+    unfollow();
     expect(subs.fred).to.be(undefined);
-    expect(beam.listeners('redisMessage')).to.have.length(0);
+    expect(beam.listeners('message')).to.have.length(0);
 
   })
 
   it('should be able to keep track of subscriptions for multiple sessions', function *(){
     yield driver.subscribe('fred', 'dogpix');
     yield driver.subscribe('sally', 'dogpix');
-    yield beam.follow('fred', function(){});
-    yield beam.follow('sally', function(){});
+    var unFred = yield beam.follow('fred', function(){});
+    var unSally = yield beam.follow('sally', function(){});
 
 
     var subs = beam.subscriptions;
-    expect(beam.listeners('redisMessage')).to.have.length(2);
+    expect(beam.listeners('message')).to.have.length(2);
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(1);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['dogpix']);
-    expect(subs.sally.has('dogpix')).to.be.ok();
-    expect(subs.sally.size).to.eql(1);
+    expect(subs.sally.resources.has('dogpix')).to.be.ok();
+    expect(subs.sally.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:sally')).to.eql(['dogpix']);
 
     yield driver.subscribe('fred', 'catpix');
-    yield wait(beam, 'fred');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.has('catpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(2);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.has('catpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(2);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
-    expect(subs.sally.has('dogpix')).to.be.ok();
-    expect(subs.sally.size).to.eql(1);
+    expect(subs.sally.resources.has('dogpix')).to.be.ok();
+    expect(subs.sally.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:sally')).to.eql(['dogpix']);
 
     yield driver.unsubscribe('sally', 'dogpix');
-    yield wait(beam, 'sally');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.has('dogpix')).to.be.ok();
-    expect(subs.fred.has('catpix')).to.be.ok();
-    expect(subs.fred.size).to.eql(2);
+    expect(subs.fred.resources.has('dogpix')).to.be.ok();
+    expect(subs.fred.resources.has('catpix')).to.be.ok();
+    expect(subs.fred.resources.size).to.eql(2);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql(['catpix', 'dogpix']);
-    expect(subs.sally.size).to.eql(0);
+    expect(subs.sally.resources.size).to.eql(0);
     expect(yield redis.smembers('beam:0:session:sally')).to.eql([]);
 
     yield driver.unsubscribe('fred');
+    yield wait(beam, 'message');
     yield driver.subscribe('sally', 'turtlepix');
-    yield wait(beam, 'fred');
-    yield wait(beam, 'sally');
+    yield wait(beam, 'message');
 
-    expect(subs.fred.size).to.eql(0);
+    expect(subs.fred.resources.size).to.eql(0);
     expect(yield redis.smembers('beam:0:session:fred')).to.eql([]);
-    expect(subs.sally.has('turtlepix')).to.be.ok();
-    expect(subs.sally.size).to.eql(1);
+    expect(subs.sally.resources.has('turtlepix')).to.be.ok();
+    expect(subs.sally.resources.size).to.eql(1);
     expect(yield redis.smembers('beam:0:session:sally')).to.eql(['turtlepix']);
 
-    beam.unfollow('fred');
+    unFred();
     expect(subs.fred).to.be(undefined);
-    expect(beam.listeners('redisMessage')).to.have.length(1);
+    expect(beam.listeners('message')).to.have.length(1);
 
-    beam.unfollow('sally');
+    unSally();
     expect(subs.sally).to.be(undefined);
-    expect(beam.listeners('redisMessage')).to.have.length(0);
+    expect(beam.listeners('message')).to.have.length(0);
   })
     
   it('should correctly respond to broadcast event', function *(done){
-    yield beam.follow('fred', function(msg){
+    var unfollow = yield beam.follow('fred', function(msg){
       expect(msg).to.eql({
         resource: 'catpix',
         body: {bar: 'foo'},
         type: 'broadcast'
       })
-      beam.unfollow('fred');
+      unfollow();
       done();
     });
     
@@ -195,19 +206,31 @@ describe('Beam', function(done){
     yield driver.broadcast('catpix', {bar: 'foo'});
   })
 
+  it('should not respond to a broadcast that its not subscribed to', function *(done){
+    var unfollow = yield beam.follow('fred', function(msg){
+      throw new Error('should not have reached here');
+    });
+    
+    yield driver.broadcast('catpix', {bar: 'foo'});
+    setTimeout(function(){
+      unfollow();
+      done();
+    }, 30)
+  })
+
   it('should correctly respond to multiple broadcast events', function *(done){
-    yield beam.follow('fred', function(msg){
+    var unfollowFred = yield beam.follow('fred', function(msg){
       expect(msg).to.eql({
         resource: 'catpix',
         body: {bar: 'cat'},
         type: 'broadcast'
       })
-      beam.unfollow('fred');
+      unfollowFred();
     });
 
     var count = 2;
 
-    yield beam.follow('sally', function(msg){
+    var unfollowSally = yield beam.follow('sally', function(msg){
       if (--count) {
         expect(msg).to.eql({
           resource: 'catpix',
@@ -223,7 +246,7 @@ describe('Beam', function(done){
         type: 'broadcast'
       })
 
-      beam.unfollow('sally');
+      unfollowSally();
       done();
     });
     
@@ -236,15 +259,20 @@ describe('Beam', function(done){
   })
 
   it('should handle multiple follows of the same session', function *(done){
+    var subs = beam.subscriptions;
     var two = 2;
 
     function finished(){
       if (--two) return;
-      beam.unfollow('fred');
+      expect(subs.fred.registers).to.eql(2);
+      unfollow1();
+      expect(subs.fred.registers).to.eql(1);
+      unfollow2();
+      expect(subs.fred).to.be(undefined);
       done();
     }
 
-    yield beam.follow('fred', function(msg){
+    var unfollow1 = yield beam.follow('fred', function(msg){
       expect(msg).to.eql({
         resource: 'catpix',
         body: {bar: 'cat'},
@@ -253,7 +281,7 @@ describe('Beam', function(done){
       finished();
     });
 
-    yield beam.follow('fred', function(msg){
+    var unfollow2 = yield beam.follow('fred', function(msg){
       expect(msg).to.eql({
         resource: 'catpix',
         body: {bar: 'cat'},
@@ -266,14 +294,22 @@ describe('Beam', function(done){
     yield driver.broadcast('catpix', {bar: 'cat'});
   })
 
+  it('should not do anything when unfollow already complete', function *(){
+    var subs = beam.subscriptions;
+    var unfollow = yield beam.follow('fred', function(){});
+    expect(unfollow()).to.be(true);
+    expect(subs.fred).to.be(undefined);
+    expect(unfollow()).to.be(false);
+  })
+
   it('should ignore broadcasts without resource', function *(done){
-    yield beam.follow('fred', function(msg){
+    var unfollow = yield beam.follow('fred', function(msg){
       expect(msg).to.eql({
         resource: 'catpix',
         body: {bar: 'foo'},
         type: 'broadcast'
       })
-      beam.unfollow('fred');
+      unfollow();
       done();
     });
     
@@ -284,5 +320,116 @@ describe('Beam', function(done){
       // resource: 'catpix' // this is what we are testing
     }))
     yield driver.broadcast('catpix', {bar: 'foo'});
+  })
+
+  describe('.subscribe()', function(){
+    it('adds item to set corectly', function *(){
+      yield driver.subscribe('fred', 'catpix');
+      var val = yield redis.smembers('beam:0:session:fred');
+      expect(val).to.be.an(Array);
+      expect(val[0]).to.eql('catpix');
+    })
+
+    it('correctly emits event', function *(done){
+      pubsub.once("message", function(channel, message){
+        expect(channel).to.eql('beam:0:channel');
+        expect(JSON.parse(message)).to.eql({
+          type: 'subscribe',
+          session: 'fred',
+          resource: 'catpix'
+        });
+        done();
+      })
+      pubsub.subscribe('beam:0:channel');
+      yield driver.subscribe('fred', 'catpix');
+    })
+  })
+
+  describe('.unsubscribe()', function(){
+    it('removes item from set corectly', function *(){
+      yield driver.subscribe('sally', 'catpix');
+      yield driver.subscribe('fred', 'catpix');
+      yield driver.subscribe('sally', 'dogpix');
+      yield driver.subscribe('fred', 'dogpix');
+ 
+      yield driver.unsubscribe('sally', 'catpix');
+
+      var fred = yield redis.smembers('beam:0:session:fred');
+      expect(fred).to.be.an(Array);
+      expect(fred).to.have.length(2);
+      expect(fred[0]).to.eql('catpix');
+      expect(fred[1]).to.eql('dogpix');
+
+      var sally = yield redis.smembers('beam:0:session:sally')
+      expect(sally).to.be.an(Array);
+      expect(sally).to.have.length(1);
+      expect(sally[0]).to.eql('dogpix');
+    })
+
+    it('unsubscribes all correctly', function *(){
+      yield driver.subscribe('sally', 'catpix');
+      yield driver.subscribe('fred', 'catpix');
+      yield driver.subscribe('sally', 'dogpix');
+      yield driver.subscribe('fred', 'dogpix');
+
+      var sally = yield redis.smembers('beam:0:session:sally');
+      expect(sally).to.be.an(Array);
+      expect(sally).to.have.length(2);
+
+      yield driver.unsubscribe('sally');
+
+      var fred = yield redis.smembers('beam:0:session:fred');
+      expect(fred).to.be.an(Array);
+      expect(fred).to.have.length(2);
+      expect(fred[0]).to.eql('catpix');
+      expect(fred[1]).to.eql('dogpix');
+
+      var sally = yield redis.smembers('beam:0:session:sally');
+      expect(sally).to.be.an(Array);
+      expect(sally).to.have.length(0);
+    })
+
+    it('correctly emits event', function *(done){
+      pubsub.once("message", function(channel, message){
+        expect(channel).to.eql('beam:0:channel');
+        expect(JSON.parse(message)).to.eql({
+          type: 'unsubscribe',
+          session: 'fred',
+          resource: 'catpix'
+        });
+        done();
+      })
+      pubsub.subscribe('beam:0:channel');
+      yield driver.unsubscribe('fred', 'catpix');
+    })
+
+    it('correctly emits event when unsubscribing all', function *(done){
+      pubsub.once("message", function(channel, message){
+        expect(channel).to.eql('beam:0:channel');
+        expect(JSON.parse(message)).to.eql({
+          type: 'unsubscribe_all',
+          session: 'fred'
+        });
+        done();
+      })
+      pubsub.subscribe('beam:0:channel');
+      yield driver.unsubscribe('fred');
+    })
+  })
+
+  describe('.broadcast()', function(){
+    it('correctly emits event', function *(done){
+      pubsub.once("message", function(channel, message){
+        expect(channel).to.eql('beam:0:channel');
+        expect(JSON.parse(message)).to.eql({
+          type: 'broadcast',
+          resource: 'catpix',
+          body: {foo: 'bar'}
+        });
+        done();
+      })
+      pubsub.subscribe('beam:0:channel');
+      yield driver.broadcast('catpix', {foo: 'bar'});
+    })
   })
 })
