@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/nickjackson/beam.svg?branch=master)](https://travis-ci.org/nickjackson/beam)
 
-beam.js is a realtime, subscription based, distributed broadcast emitter built on redis.
+beam.js is a distributed realtime broadcast emitter, built on top of redis.
 
 ## Description
 You can use beam to subscribe users to certain resources, such as database records or feeds. When those resources change, you can use beam to broadcast messages with details about the change to the users subscribed.
@@ -10,7 +10,7 @@ You can use beam to subscribe users to certain resources, such as database recor
 ## Example
 
 ```js
-// sets up beam with 
+// sets up beam to watch for messages
 var beam = Beam({
     redis: redis.createClient(),
     subRedis: redis.createClient()
@@ -25,7 +25,7 @@ var unfollow = yield beam.follow('sharon', function(msg){
     unfollow();
 })
 
-// setup a driver without 
+// setup a driver without watching
 var driver = Beam({ redis: redis.createClient() });
 
 // subscribe sharon to catpix resource
