@@ -7,23 +7,9 @@ beam.js is a distributed realtime broadcast emitter, built on top of redis.
 ## Description
 You can use beam to subscribe users to certain resources, such as database records or feeds. When those resources change, you can use beam to broadcast messages with details about the change to the users subscribed.
 
-## Example
+## API
 
 ```js
-// sets up beam to watch for messages
-var beam = Beam({
-    redis: redis.createClient(),
-    subRedis: redis.createClient()
-})
-
-// follow events that sharon subscribed to.
-var unfollow = yield beam.follow('sharon', function(msg){
-    console.log(msg.resource)  // 'catpix'
-    console.log(msg.body.some) // 'data'
-    
-    // when you're done unfollow
-    unfollow();
-})
 
 // setup a driver without watching
 var driver = Beam({ redis: redis.createClient() });
@@ -37,7 +23,19 @@ yield driver.broadcast('catpix', {some: 'data'});
 // unsubscribe sharon from catpix resource
 yield driver.unsubscribe('sharon', 'catpix');
 
+// sets up beam to watch for messages
+var beam = Beam({
+    redis: redis.createClient(),
+    subRedis: redis.createClient()
+})
+
+// follow events that sharon subscribed to.
+var unfollow = yield beam.follow('sharon', function(msg){
+    // this callback will be invoked when a `broadcast`
+    // occours for a resource that sharon is subscribed to.
+    
+    // when you're done unfollow
+    unfollow();
+})
+
 ```
-
-
-##API
